@@ -25,6 +25,11 @@ matmul #(.N(N)) uut (
 );
 
 initial begin
+    $dumpfile("wave.vcd");
+    $dumpvars(0, tb_matmul);
+end
+
+initial begin
     rst = 1;
     start = 0;
 
@@ -44,3 +49,5 @@ initial begin
 end
 
 endmodule
+
+
