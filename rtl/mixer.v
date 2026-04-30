@@ -1,99 +1,67 @@
 module mixer_block #(
-    parameter N = 4,
+    parameter TOKENS = 4,
+    parameter CHANNELS = 4,
     parameter DATA_WIDTH = 8,
     parameter ACC_WIDTH = 32
 )(
-    input  wire clk,
-    input  wire rst,
-    input  wire start,
+    input clk,
+    input rst,
+    input start,
 
-    input  wire signed [DATA_WIDTH-1:0] x [0:N-1],
+    input  signed [DATA_WIDTH-1:0] x [0:TOKENS-1][0:CHANNELS-1],
 
-    input  wire signed [DATA_WIDTH-1:0] w1 [0:N-1],
-    input  wire signed [DATA_WIDTH-1:0] w2 [0:N-1],
-    input  wire signed [ACC_WIDTH-1:0] b1,
-    input  wire signed [ACC_WIDTH-1:0] b2,
+    input  signed [DATA_WIDTH-1:0] w_token [0:TOKENS-1][0:TOKENS-1],
+    input  signed [DATA_WIDTH-1:0] w_channel [0:CHANNELS-1][0:CHANNELS-1],
 
-    output reg  signed [ACC_WIDTH-1:0] y,
-    output reg  done
+    input  signed [ACC_WIDTH-1:0] b_token [0:TOKENS-1],
+    input  signed [ACC_WIDTH-1:0] b_channel [0:CHANNELS-1],
+
+    output reg signed [ACC_WIDTH-1:0] y [0:TOKENS-1][0:CHANNELS-1],
+    output reg done
 );
 
-wire signed [ACC_WIDTH-1:0] l1_out;
-wire l1_done;
+// intermediate storage
+reg signed [ACC_WIDTH-1:0] token_out [0:TOKENS-1][0:CHANNELS-1];
+reg signed [ACC_WIDTH-1:0] channel_out [0:TOKENS-1][0:CHANNELS-1];
 
-wire signed [ACC_WIDTH-1:0] act_out;
-
-wire signed [ACC_WIDTH-1:0] l2_out;
-wire l2_done;
-
-reg l1_start, l2_start;
-reg busy;
-
-// Linear 1
-linear #(.N(N)) l1 (
-    .clk(clk),
-    .rst(rst),
-    .start(l1_start),
-    .x(x),
-    .w(w1),
-    .bias(b1),
-    .y(l1_out),
-    .done(l1_done)
-);
-
-// Activation
-activation act (
-    .x(l1_out),
-    .y(act_out)
-);
-
-// Linear 2 (reuse activation output as vector input replicated)
-wire signed [DATA_WIDTH-1:0] act_vec [0:N-1];
-
-genvar i;
-generate
-    for (i = 0; i < N; i = i + 1) begin
-        assign act_vec[i] = act_out[DATA_WIDTH-1:0];
-    end
-endgenerate
-
-linear #(.N(N)) l2 (
-    .clk(clk),
-    .rst(rst),
-    .start(l2_start),
-    .x(act_vec),
-    .w(w2),
-    .bias(b2),
-    .y(l2_out),
-    .done(l2_done)
-);
+integer i, j, k;
 
 always @(posedge clk) begin
     if (rst) begin
-        l1_start <= 0;
-        l2_start <= 0;
         done <= 0;
-        busy <= 0;
-        y <= 0;
+    end else if (start) begin
+
+        // token mixing
+        for (j = 0; j < CHANNELS; j = j + 1) begin
+            for (i = 0; i < TOKENS; i = i + 1) begin
+                token_out[i][j] = 0;
+                for (k = 0; k < TOKENS; k = k + 1) begin
+                    token_out[i][j] = token_out[i][j] + x[k][j] * w_token[i][k];
+                end
+                token_out[i][j] = token_out[i][j] + b_token[i];
+            end
+        end
+
+        // channel mixing
+        for (i = 0; i < TOKENS; i = i + 1) begin
+            for (j = 0; j < CHANNELS; j = j + 1) begin
+                channel_out[i][j] = 0;
+                for (k = 0; k < CHANNELS; k = k + 1) begin
+                    channel_out[i][j] = channel_out[i][j] + token_out[i][k] * w_channel[j][k];
+                end
+                channel_out[i][j] = channel_out[i][j] + b_channel[j];
+
+                // ReLU
+                if (channel_out[i][j] < 0)
+                    y[i][j] = 0;
+                else
+                    y[i][j] = channel_out[i][j];
+            end
+        end
+
+        done <= 1;
     end else begin
-        l1_start <= 0;
-        l2_start <= 0;
         done <= 0;
-
-        if (start && !busy) begin
-            l1_start <= 1;
-            busy <= 1;
-        end
-
-        if (l1_done) begin
-            l2_start <= 1;
-        end
-
-        if (l2_done) begin
-            y <= l2_out;
-            done <= 1;
-            busy <= 0;
-        end
     end
 end
 
