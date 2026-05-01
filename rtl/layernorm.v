@@ -38,6 +38,7 @@ module layernorm #(
 
     reg [1:0] state;
 
+    reg signed [ACC_WIDTH-1:0] signed_res;
     always @(posedge clk) begin
         if (rst) begin
             state <= IDLE;
@@ -60,8 +61,7 @@ module layernorm #(
                         sum <= sum + x[idx];
                         idx <= idx + 1;
                     end else begin
-                        // Simplified division by N (assumes N is power of 2 for shift, or just uses /)
-                        mean <= sum / N;
+                        mean <= sum / $signed(N);
                         state <= CALC;
                         idx <= 0;
                     end
@@ -69,9 +69,10 @@ module layernorm #(
 
                 CALC: begin
                     if (idx < N) begin
-                        // y = (x - mean)
-                        // Simple centering. In a full LayerNorm, we'd also divide by stddev.
-                        y[idx] <= x[idx] - mean[DATA_WIDTH-1:0];
+                        signed_res = x[idx] - mean;
+                        if (signed_res > 127) y[idx] <= 127;
+                        else if (signed_res < -128) y[idx] <= -128;
+                        else y[idx] <= signed_res[DATA_WIDTH-1:0];
                         idx <= idx + 1;
                     end else begin
                         state <= DONE;
