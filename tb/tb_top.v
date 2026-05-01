@@ -10,6 +10,8 @@ parameter ACC_WIDTH = 32;
 reg clk = 0;
 always #5 clk = ~clk;
 
+parameter NUM_CLASSES = 10;
+
 reg rst, start;
 reg signed [DATA_WIDTH-1:0] x_in [0:TOKENS-1][0:CHANNELS-1];
 
@@ -23,7 +25,9 @@ reg signed [ACC_WIDTH-1:0]  b_chan1 [0:HIDDEN_CHANNEL-1];
 reg signed [DATA_WIDTH-1:0] w_chan2 [0:CHANNELS-1][0:HIDDEN_CHANNEL-1];
 reg signed [ACC_WIDTH-1:0]  b_chan2 [0:CHANNELS-1];
 
-parameter NUM_CLASSES = 10;
+reg signed [DATA_WIDTH-1:0] w_head [0:NUM_CLASSES-1][0:CHANNELS-1];
+reg signed [ACC_WIDTH-1:0]  b_head [0:NUM_CLASSES-1];
+
 wire [ACC_WIDTH*NUM_CLASSES-1:0] y_out_flat;
 wire done;
 
@@ -38,6 +42,8 @@ wire [DATA_WIDTH*HIDDEN_CHANNEL*CHANNELS-1:0] w_chan1_flat;
 wire [ACC_WIDTH*HIDDEN_CHANNEL-1:0] b_chan1_flat;
 wire [DATA_WIDTH*CHANNELS*HIDDEN_CHANNEL-1:0] w_chan2_flat;
 wire [ACC_WIDTH*CHANNELS-1:0] b_chan2_flat;
+wire [DATA_WIDTH*NUM_CLASSES*CHANNELS-1:0] w_head_flat;
+wire [ACC_WIDTH*NUM_CLASSES-1:0] b_head_flat;
 
 genvar g, h;
 generate
@@ -70,6 +76,12 @@ generate
             assign w_chan2_flat[DATA_WIDTH*(g*HIDDEN_CHANNEL + h + 1)-1 : DATA_WIDTH*(g*HIDDEN_CHANNEL + h)] = w_chan2[g][h];
         end
     end
+    for (g = 0; g < NUM_CLASSES; g = g + 1) begin
+        assign b_head_flat[ACC_WIDTH*(g+1)-1 : ACC_WIDTH*g] = b_head[g];
+        for (h = 0; h < CHANNELS; h = h + 1) begin
+            assign w_head_flat[DATA_WIDTH*(g*CHANNELS + h + 1)-1 : DATA_WIDTH*(g*CHANNELS + h)] = w_head[g][h];
+        end
+    end
 endgenerate
 
 mixer_top #(
@@ -85,8 +97,7 @@ mixer_top #(
     .w_token2_flat(w_token2_flat), .b_token2_flat(b_token2_flat),
     .w_chan1_flat(w_chan1_flat), .b_chan1_flat(b_chan1_flat),
     .w_chan2_flat(w_chan2_flat), .b_chan2_flat(b_chan2_flat),
-    .w_head_flat({(DATA_WIDTH*NUM_CLASSES*CHANNELS){1'b0}}),
-    .b_head_flat({(ACC_WIDTH*NUM_CLASSES){1'b0}}),
+    .w_head_flat(w_head_flat), .b_head_flat(b_head_flat),
     .y_out_flat(y_out_flat), .done(done)
 );
 
@@ -108,48 +119,224 @@ initial begin
     #20 rst = 0;
 
     // Load reference data
-    x_in[0][0] = -4; x_in[0][1] = 9; x_in[0][2] = 4; x_in[0][3] = 0;
-    x_in[1][0] = -3; x_in[1][1] = -4; x_in[1][2] = 8; x_in[1][3] = 0;
-    x_in[2][0] = 0; x_in[2][1] = -7; x_in[2][2] = -3; x_in[2][3] = -8;
-    x_in[3][0] = -9; x_in[3][1] = 1; x_in[3][2] = -5; x_in[3][3] = -9;
-
-    w_token1[0][0] = 1; w_token1[0][1] = 1; w_token1[0][2] = -2; w_token1[0][3] = -2;
-    w_token1[1][0] = 1; w_token1[1][1] = -1; w_token1[1][2] = -1; w_token1[1][3] = -2;
-    w_token1[2][0] = 1; w_token1[2][1] = -2; w_token1[2][2] = -2; w_token1[2][3] = 0;
-    w_token1[3][0] = 0; w_token1[3][1] = 0; w_token1[3][2] = -1; w_token1[3][3] = 1;
-    w_token1[4][0] = 1; w_token1[4][1] = 1; w_token1[4][2] = 1; w_token1[4][3] = 0;
-    w_token1[5][0] = -1; w_token1[5][1] = -1; w_token1[5][2] = 0; w_token1[5][3] = -1;
-    w_token1[6][0] = 0; w_token1[6][1] = 1; w_token1[6][2] = 0; w_token1[6][3] = 1;
-    w_token1[7][0] = 1; w_token1[7][1] = -2; w_token1[7][2] = 0; w_token1[7][3] = -2;
-
-    b_token1[0] = -3; b_token1[1] = 1; b_token1[2] = -1; b_token1[3] = 3;
-    b_token1[4] = 1; b_token1[5] = -4; b_token1[6] = -2; b_token1[7] = 3;
-
-    w_token2[0][0] = 1; w_token2[0][1] = -1; w_token2[0][2] = -1; w_token2[0][3] = -1; w_token2[0][4] = -2; w_token2[0][5] = -1; w_token2[0][6] = -2; w_token2[0][7] = -1;
-    w_token2[1][0] = 1; w_token2[1][1] = 1; w_token2[1][2] = 0; w_token2[1][3] = 1; w_token2[1][4] = 0; w_token2[1][5] = 1; w_token2[1][6] = -2; w_token2[1][7] = 1;
-    w_token2[2][0] = 0; w_token2[2][1] = 0; w_token2[2][2] = -1; w_token2[2][3] = -2; w_token2[2][4] = 1; w_token2[2][5] = -1; w_token2[2][6] = 1; w_token2[2][7] = 1;
-    w_token2[3][0] = -1; w_token2[3][1] = -1; w_token2[3][2] = -1; w_token2[3][3] = -1; w_token2[3][4] = -1; w_token2[3][5] = 1; w_token2[3][6] = -1; w_token2[3][7] = -2;
-
-    b_token2[0] = -4; b_token2[1] = 4; b_token2[2] = -4; b_token2[3] = 4;
-
-    w_chan1[0][0] = -1; w_chan1[0][1] = 1; w_chan1[0][2] = -1; w_chan1[0][3] = 0;
-    w_chan1[1][0] = 1; w_chan1[1][1] = 0; w_chan1[1][2] = 1; w_chan1[1][3] = -1;
-    w_chan1[2][0] = 0; w_chan1[2][1] = 1; w_chan1[2][2] = -2; w_chan1[2][3] = -1;
-    w_chan1[3][0] = 1; w_chan1[3][1] = -2; w_chan1[3][2] = 1; w_chan1[3][3] = -2;
-    w_chan1[4][0] = -1; w_chan1[4][1] = 0; w_chan1[4][2] = -2; w_chan1[4][3] = 1;
-    w_chan1[5][0] = -1; w_chan1[5][1] = -2; w_chan1[5][2] = 1; w_chan1[5][3] = 1;
-    w_chan1[6][0] = 1; w_chan1[6][1] = -2; w_chan1[6][2] = -2; w_chan1[6][3] = -2;
-    w_chan1[7][0] = 0; w_chan1[7][1] = -2; w_chan1[7][2] = -2; w_chan1[7][3] = -2;
-
-    b_chan1[0] = 1; b_chan1[1] = 3; b_chan1[2] = 2; b_chan1[3] = -5;
-    b_chan1[4] = 2; b_chan1[5] = 2; b_chan1[6] = -3; b_chan1[7] = -5;
-
-    w_chan2[0][0] = 1; w_chan2[0][1] = 0; w_chan2[0][2] = 0; w_chan2[0][3] = -2; w_chan2[0][4] = 0; w_chan2[0][5] = -2; w_chan2[0][6] = -1; w_chan2[0][7] = 0;
-    w_chan2[1][0] = -1; w_chan2[1][1] = -2; w_chan2[1][2] = 1; w_chan2[1][3] = 0; w_chan2[1][4] = -2; w_chan2[1][5] = 1; w_chan2[1][6] = 1; w_chan2[1][7] = -1;
-    w_chan2[2][0] = -2; w_chan2[2][1] = 1; w_chan2[2][2] = 0; w_chan2[2][3] = 0; w_chan2[2][4] = -1; w_chan2[2][5] = 1; w_chan2[2][6] = -2; w_chan2[2][7] = 0;
-    w_chan2[3][0] = 1; w_chan2[3][1] = 1; w_chan2[3][2] = -1; w_chan2[3][3] = 0; w_chan2[3][4] = 0; w_chan2[3][5] = -2; w_chan2[3][6] = 0; w_chan2[3][7] = -2;
-
-    b_chan2[0] = -3; b_chan2[1] = -5; b_chan2[2] = -1; b_chan2[3] = 4;
+    x_in[0][0] = -4;
+    x_in[0][1] = 9;
+    x_in[0][2] = 4;
+    x_in[0][3] = 0;
+    x_in[1][0] = -3;
+    x_in[1][1] = -4;
+    x_in[1][2] = 8;
+    x_in[1][3] = 0;
+    x_in[2][0] = 0;
+    x_in[2][1] = -7;
+    x_in[2][2] = -3;
+    x_in[2][3] = -8;
+    x_in[3][0] = -9;
+    x_in[3][1] = 1;
+    x_in[3][2] = -5;
+    x_in[3][3] = -9;
+    w_token1[0][0] = 1;
+    w_token1[0][1] = 1;
+    w_token1[0][2] = -2;
+    w_token1[0][3] = -2;
+    w_token1[1][0] = 1;
+    w_token1[1][1] = -1;
+    w_token1[1][2] = -1;
+    w_token1[1][3] = -2;
+    w_token1[2][0] = 1;
+    w_token1[2][1] = -2;
+    w_token1[2][2] = -2;
+    w_token1[2][3] = 0;
+    w_token1[3][0] = 0;
+    w_token1[3][1] = 0;
+    w_token1[3][2] = -1;
+    w_token1[3][3] = 1;
+    w_token1[4][0] = 1;
+    w_token1[4][1] = 1;
+    w_token1[4][2] = 1;
+    w_token1[4][3] = 0;
+    w_token1[5][0] = -1;
+    w_token1[5][1] = -1;
+    w_token1[5][2] = 0;
+    w_token1[5][3] = -1;
+    w_token1[6][0] = 0;
+    w_token1[6][1] = 1;
+    w_token1[6][2] = 0;
+    w_token1[6][3] = 1;
+    w_token1[7][0] = 1;
+    w_token1[7][1] = -2;
+    w_token1[7][2] = 0;
+    w_token1[7][3] = -2;
+    b_token1[0] = -3;
+    b_token1[1] = 1;
+    b_token1[2] = -1;
+    b_token1[3] = 3;
+    b_token1[4] = 1;
+    b_token1[5] = -4;
+    b_token1[6] = -2;
+    b_token1[7] = 3;
+    w_token2[0][0] = 1;
+    w_token2[0][1] = -1;
+    w_token2[0][2] = -1;
+    w_token2[0][3] = -1;
+    w_token2[0][4] = -2;
+    w_token2[0][5] = -1;
+    w_token2[0][6] = -2;
+    w_token2[0][7] = -1;
+    w_token2[1][0] = 1;
+    w_token2[1][1] = 1;
+    w_token2[1][2] = 0;
+    w_token2[1][3] = 1;
+    w_token2[1][4] = 0;
+    w_token2[1][5] = 1;
+    w_token2[1][6] = -2;
+    w_token2[1][7] = 1;
+    w_token2[2][0] = 0;
+    w_token2[2][1] = 0;
+    w_token2[2][2] = -1;
+    w_token2[2][3] = -2;
+    w_token2[2][4] = 1;
+    w_token2[2][5] = -1;
+    w_token2[2][6] = 1;
+    w_token2[2][7] = 1;
+    w_token2[3][0] = -1;
+    w_token2[3][1] = -1;
+    w_token2[3][2] = -1;
+    w_token2[3][3] = -1;
+    w_token2[3][4] = -1;
+    w_token2[3][5] = 1;
+    w_token2[3][6] = -1;
+    w_token2[3][7] = -2;
+    b_token2[0] = -4;
+    b_token2[1] = 4;
+    b_token2[2] = -4;
+    b_token2[3] = 4;
+    w_chan1[0][0] = -1;
+    w_chan1[0][1] = 1;
+    w_chan1[0][2] = -1;
+    w_chan1[0][3] = 0;
+    w_chan1[1][0] = 1;
+    w_chan1[1][1] = 0;
+    w_chan1[1][2] = 1;
+    w_chan1[1][3] = -1;
+    w_chan1[2][0] = 0;
+    w_chan1[2][1] = 1;
+    w_chan1[2][2] = -2;
+    w_chan1[2][3] = -1;
+    w_chan1[3][0] = 1;
+    w_chan1[3][1] = -2;
+    w_chan1[3][2] = 1;
+    w_chan1[3][3] = -2;
+    w_chan1[4][0] = -1;
+    w_chan1[4][1] = 0;
+    w_chan1[4][2] = -2;
+    w_chan1[4][3] = 1;
+    w_chan1[5][0] = -1;
+    w_chan1[5][1] = -2;
+    w_chan1[5][2] = 1;
+    w_chan1[5][3] = 1;
+    w_chan1[6][0] = 1;
+    w_chan1[6][1] = -2;
+    w_chan1[6][2] = -2;
+    w_chan1[6][3] = -2;
+    w_chan1[7][0] = 0;
+    w_chan1[7][1] = -2;
+    w_chan1[7][2] = -2;
+    w_chan1[7][3] = -2;
+    b_chan1[0] = 1;
+    b_chan1[1] = 3;
+    b_chan1[2] = 2;
+    b_chan1[3] = -5;
+    b_chan1[4] = 2;
+    b_chan1[5] = 2;
+    b_chan1[6] = -3;
+    b_chan1[7] = -5;
+    w_chan2[0][0] = 1;
+    w_chan2[0][1] = 0;
+    w_chan2[0][2] = 0;
+    w_chan2[0][3] = -2;
+    w_chan2[0][4] = 0;
+    w_chan2[0][5] = -2;
+    w_chan2[0][6] = -1;
+    w_chan2[0][7] = 0;
+    w_chan2[1][0] = -1;
+    w_chan2[1][1] = -2;
+    w_chan2[1][2] = 1;
+    w_chan2[1][3] = 0;
+    w_chan2[1][4] = -2;
+    w_chan2[1][5] = 1;
+    w_chan2[1][6] = 1;
+    w_chan2[1][7] = -1;
+    w_chan2[2][0] = -2;
+    w_chan2[2][1] = 1;
+    w_chan2[2][2] = 0;
+    w_chan2[2][3] = 0;
+    w_chan2[2][4] = -1;
+    w_chan2[2][5] = 1;
+    w_chan2[2][6] = -2;
+    w_chan2[2][7] = 0;
+    w_chan2[3][0] = 1;
+    w_chan2[3][1] = 1;
+    w_chan2[3][2] = -1;
+    w_chan2[3][3] = 0;
+    w_chan2[3][4] = 0;
+    w_chan2[3][5] = -2;
+    w_chan2[3][6] = 0;
+    w_chan2[3][7] = -2;
+    b_chan2[0] = -3;
+    b_chan2[1] = -5;
+    b_chan2[2] = -1;
+    b_chan2[3] = 4;
+    w_head[0][0] = 0;
+    w_head[0][1] = 0;
+    w_head[0][2] = -1;
+    w_head[0][3] = 0;
+    w_head[1][0] = 0;
+    w_head[1][1] = -2;
+    w_head[1][2] = 0;
+    w_head[1][3] = 0;
+    w_head[2][0] = -1;
+    w_head[2][1] = -1;
+    w_head[2][2] = 1;
+    w_head[2][3] = -2;
+    w_head[3][0] = 0;
+    w_head[3][1] = 0;
+    w_head[3][2] = 1;
+    w_head[3][3] = 0;
+    w_head[4][0] = -2;
+    w_head[4][1] = 1;
+    w_head[4][2] = -2;
+    w_head[4][3] = 1;
+    w_head[5][0] = 1;
+    w_head[5][1] = -1;
+    w_head[5][2] = -2;
+    w_head[5][3] = 0;
+    w_head[6][0] = 0;
+    w_head[6][1] = -2;
+    w_head[6][2] = 0;
+    w_head[6][3] = 0;
+    w_head[7][0] = -2;
+    w_head[7][1] = 1;
+    w_head[7][2] = -2;
+    w_head[7][3] = 1;
+    w_head[8][0] = 0;
+    w_head[8][1] = 0;
+    w_head[8][2] = 0;
+    w_head[8][3] = -1;
+    w_head[9][0] = 1;
+    w_head[9][1] = -1;
+    w_head[9][2] = -1;
+    w_head[9][3] = -2;
+    b_head[0] = -5;
+    b_head[1] = 1;
+    b_head[2] = 1;
+    b_head[3] = 9;
+    b_head[4] = 0;
+    b_head[5] = -4;
+    b_head[6] = -10;
+    b_head[7] = -10;
+    b_head[8] = 9;
+    b_head[9] = 2;
 
     #50 start = 1;
     #10 start = 0;
